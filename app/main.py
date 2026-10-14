@@ -15,7 +15,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Path, Query, status
+from fastapi import FastAPI, HTTPException, Path, Query, status as http_status
 from pydantic import BaseModel, Field, field_validator
 from pymongo import MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError, PyMongoError
@@ -276,10 +276,10 @@ def health():
         client.admin.command("ping")
         return {"status": "ok"}
     except Exception:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable")
+        raise HTTPException(status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable")
 
 
-@app.post("/employees", status_code=status.HTTP_201_CREATED, tags=["employees"])
+@app.post("/employees", status_code=http_status.HTTP_201_CREATED, tags=["employees"])
 def create_employee(body: EmployeeCreate):
     """
     Create employee. Unique emp_code enforced by database unique index.
@@ -294,7 +294,7 @@ def create_employee(body: EmployeeCreate):
     try:
         db.employees.insert_one(doc)
     except DuplicateKeyError:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Employee with this emp_code already exists")
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail="Employee with this emp_code already exists")
 
     return format_employee_doc(doc)
 
@@ -318,7 +318,7 @@ def list_employees(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
-@app.post("/attendance/punch-in", status_code=status.HTTP_201_CREATED, tags=["attendance"])
+@app.post("/attendance/punch-in", status_code=http_status.HTTP_201_CREATED, tags=["attendance"])
 def punch_in(body: PunchInRequest):
     """
     Record a punch-in. Creates the day's record (R1, R2).
@@ -326,7 +326,7 @@ def punch_in(body: PunchInRequest):
     """
     emp = db.employees.find_one({"emp_code": body.emp_code})
     if not emp:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Employee not found")
 
     raw_ms = body.punched_at if body.punched_at is not None else int(time.time() * 1000)
     punch_in_dt = epoch_ms_to_datetime(raw_ms)
@@ -351,12 +351,12 @@ def punch_in(body: PunchInRequest):
     try:
         db.attendance_logs.insert_one(doc)
     except DuplicateKeyError:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already punched in for this date")
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail="Already punched in for this date")
 
     return format_attendance_doc(doc)
 
 
-@app.post("/attendance/punch-out", status_code=status.HTTP_200_OK, tags=["attendance"])
+@app.post("/attendance/punch-out", status_code=http_status.HTTP_200_OK, tags=["attendance"])
 def punch_out(body: PunchOutRequest):
     """
     Record a punch-out. Closes employee's most recent record whose punch_in <= punched_at.
@@ -366,7 +366,7 @@ def punch_out(body: PunchOutRequest):
     """
     emp = db.employees.find_one({"emp_code": body.emp_code})
     if not emp:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Employee not found")
 
     raw_ms = body.punched_at if body.punched_at is not None else int(time.time() * 1000)
     punch_out_dt = epoch_ms_to_datetime(raw_ms)
@@ -377,10 +377,10 @@ def punch_out(body: PunchOutRequest):
         sort=[("punch_in", -1)],
     )
     if not candidate:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No matching punch-in found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="No matching punch-in found")
 
     if candidate.get("punch_out") is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Record is already punched out")
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail="Record is already punched out")
 
     punch_in_dt = candidate["punch_in"]
     if punch_in_dt.tzinfo is None:
@@ -388,9 +388,9 @@ def punch_out(body: PunchOutRequest):
 
     diff_sec = (punch_out_dt - punch_in_dt).total_seconds()
     if diff_sec <= 0:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="punched_at must be strictly greater than punch_in")
+        raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail="punched_at must be strictly greater than punch_in")
     if diff_sec > 86400:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="punched_at cannot be more than 24 hours after punch_in")
+        raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail="punched_at cannot be more than 24 hours after punch_in")
 
     work_hours = compute_work_hours(punch_in_dt, punch_out_dt)
     overtime_min = compute_overtime(
@@ -413,7 +413,7 @@ def punch_out(body: PunchOutRequest):
     )
 
     if not updated:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Record is already punched out")
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail="Record is already punched out")
 
     return format_attendance_doc(updated)
 
@@ -432,7 +432,7 @@ def list_attendance(
     Indexed and fast at ~100,000 records.
     """
     if date_from and date_to and date_from > date_to:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="date_from cannot be greater than date_to")
+        raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail="date_from cannot be greater than date_to")
 
     q: Dict[str, Any] = {}
     if emp_code:
@@ -468,11 +468,11 @@ def regularize_attendance(
     """
     emp = db.employees.find_one({"emp_code": emp_code})
     if not emp:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Employee not found")
 
     rec = db.attendance_logs.find_one({"emp_code": emp_code, "date": date})
     if not rec:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attendance record not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Attendance record not found")
 
     old_status = rec["status"]
     old_punch_in = rec.get("punch_in")
@@ -493,7 +493,7 @@ def regularize_attendance(
     if target_status in ("ABSENT", "LEAVE"):
         if body.punch_in is not None or body.punch_out is not None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Cannot supply punch times when status is ABSENT or LEAVE",
             )
         target_punch_in = None
@@ -504,7 +504,7 @@ def regularize_attendance(
 
         if target_punch_in is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Presence status requires punch_in",
             )
 
@@ -514,7 +514,7 @@ def regularize_attendance(
         )
         if computed_date != date:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="punch_in does not match record's attendance date",
             )
 
@@ -522,12 +522,12 @@ def regularize_attendance(
             diff_sec = (target_punch_out - target_punch_in).total_seconds()
             if diff_sec <= 0:
                 raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="punch_out must be after punch_in",
                 )
             if diff_sec > 86400:
                 raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="punch_out cannot be more than 24 hours after punch_in",
                 )
 
@@ -568,7 +568,7 @@ def regularize_attendance(
         changes_db["half_day"] = {"from": old_half_day, "to": new_half_day}
 
     if not changes_db:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Request changes nothing")
+        raise HTTPException(status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Request changes nothing")
 
     now_ms = (int(time.time() * 1000) // 1000) * 1000
     now_dt = datetime.fromtimestamp(now_ms / 1000.0, tz=timezone.utc)
@@ -606,7 +606,7 @@ def regularize_attendance(
 
     if not updated:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=http_status.HTTP_409_CONFLICT,
             detail="Conflict: record was modified concurrently",
         )
 
@@ -627,7 +627,7 @@ def employee_monthly(
     """
     emp = db.employees.find_one({"emp_code": emp_code})
     if not emp:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Employee not found")
 
     year, m = map(int, month.split("-"))
     num_days = calendar.monthrange(year, m)[1]
@@ -949,7 +949,7 @@ def department_trend(
     """
     if to_date < from_date:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="'to' date must be greater than or equal to 'from' date",
         )
 
@@ -958,13 +958,13 @@ def department_trend(
     total_days = (dt_to - dt_from).days + 1
     if total_days > 92:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Date range cannot exceed 92 days",
         )
 
     dept_count = db.employees.count_documents({"department": department})
     if dept_count == 0:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Department not found")
 
     # Find department employees
     dept_emps = list(db.employees.find({"department": department}, {"emp_code": 1, "joined_on": 1}))

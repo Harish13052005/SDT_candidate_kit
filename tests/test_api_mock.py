@@ -182,8 +182,8 @@ def test_punch_in_invalid_status_422(api_client):
 def test_punch_in_late_minutes(api_client):
     seed_employee(api_client)
     # 2026-07-06 09:40:01 IST = 9*3600+40*60+1 = 34801s from midnight IST
-    # UTC offset is -05:30 -> 2026-07-06 04:10:01 UTC
-    late_ms = 1783312201000  # 2026-07-06 04:10:01 UTC
+    # IST is UTC+05:30 -> 2026-07-06 04:10:01 UTC
+    late_ms = 1783311001000
     res = api_client.post("/attendance/punch-in", json={
         "emp_code": "EMP0001", "punched_at": late_ms
     })
@@ -259,9 +259,7 @@ def test_punch_out_overtime(api_client):
     seed_employee(api_client)
     seed_punch_in(api_client)
     # Punch out 30 min after shift end: 18:30 + 30 min = 19:00 IST = 13:30 UTC
-    # 1783342200000 = 2026-07-06 13:00:00 UTC = 18:30 IST (shift end exact)
-    # +30 min = 1783344000000
-    ot_out_ms = 1783344000000  # 19:00 IST
+    ot_out_ms = 1783344600000
     res = api_client.post("/attendance/punch-out", json={
         "emp_code": "EMP0001", "punched_at": ot_out_ms
     })

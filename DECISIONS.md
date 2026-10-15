@@ -14,3 +14,6 @@ The pipeline originates on `employees` (filtering `joined_on <= month_end`) and 
 
 5. **100x Data Change.**
 At 100x scale (~10M logs), we would precompute daily/monthly rollups via event-driven background workers rather than computing on-demand aggregations across un-sharded collections.
+
+6. **Department trend.**
+The trend query starts from a one-day `$documents` anchor, uses `$densify` to generate the requested date range, and calculates headcount, daily attendance, and the seven-day moving average in MongoDB. This includes days with no attendance records without loading department employees or generating dates in Python. Rates use `$floor(value * 10000 + 0.5) / 10000` to preserve half-up rounding.

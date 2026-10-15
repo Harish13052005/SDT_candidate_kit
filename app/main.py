@@ -39,20 +39,16 @@ IST = timezone(timedelta(hours=5, minutes=30))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Ensure indexes exist at startup to prevent COLLSCAN
-    try:
-        # employees collection
-        db.employees.create_index([("emp_code", 1)], unique=True)
-        db.employees.create_index([("department", 1), ("joined_on", 1)])
-        db.employees.create_index([("joined_on", 1)])
+    # Fail startup rather than serving without uniqueness and query indexes.
+    db.employees.create_index([("emp_code", 1)], unique=True)
+    db.employees.create_index([("department", 1), ("joined_on", 1)])
+    db.employees.create_index([("joined_on", 1)])
 
-        # attendance_logs collection
-        db.attendance_logs.create_index([("emp_code", 1), ("date", 1)], unique=True)
-        db.attendance_logs.create_index([("date", -1), ("emp_code", 1)])
-        db.attendance_logs.create_index([("emp_code", 1), ("punch_in", -1)])
-        db.attendance_logs.create_index([("emp_code", 1), ("punch_out", 1), ("punch_in", -1)])
-        db.attendance_logs.create_index([("date", 1), ("late_minutes", 1)])
-    except Exception as e:
-        print(f"Warning: Index creation encountered: {e}")
+    db.attendance_logs.create_index([("emp_code", 1), ("date", 1)], unique=True)
+    db.attendance_logs.create_index([("date", -1), ("emp_code", 1)])
+    db.attendance_logs.create_index([("emp_code", 1), ("punch_in", -1)])
+    db.attendance_logs.create_index([("emp_code", 1), ("punch_out", 1), ("punch_in", -1)])
+    db.attendance_logs.create_index([("date", 1), ("late_minutes", 1)])
     yield
 
 
@@ -430,8 +426,8 @@ def punch_out(body: PunchOutRequest):
 @app.get("/attendance", tags=["attendance"])
 def list_attendance(
     emp_code: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
     status: Optional[str] = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
@@ -449,9 +445,9 @@ def list_attendance(
     if date_from or date_to:
         date_q = {}
         if date_from:
-            date_q["$gte"] = date_from
+            date_q["$gte"] = date_from.isoformat()
         if date_to:
-            date_q["$lte"] = date_to
+            date_q["$lte"] = date_to.isoformat()
         q["date"] = date_q
     if status:
         q["status"] = status
@@ -950,8 +946,8 @@ def late_leaderboard(
 @app.get("/analytics/departments/{department}/trend", tags=["analytics"])
 def department_trend(
     department: str = Path(...),
-    from_date: str = Query(..., alias="from", pattern=r"^\d{4}-\d{2}-\d{2}$"),
-    to_date: str = Query(..., alias="to", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    from_date: date = Query(..., alias="from"),
+    to_date: date = Query(..., alias="to"),
 ):
     """
     Daily attendance trend with gap filling ($densify) and 7-day moving average ($setWindowFields).
@@ -962,9 +958,7 @@ def department_trend(
             detail="'to' date must be greater than or equal to 'from' date",
         )
 
-    dt_from = datetime.strptime(from_date, "%Y-%m-%d").date()
-    dt_to = datetime.strptime(to_date, "%Y-%m-%d").date()
-    total_days = (dt_to - dt_from).days + 1
+    total_days = (to_date - from_date).days + 1
     if total_days > 92:
         raise HTTPException(
             status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -975,8 +969,8 @@ def department_trend(
     if dept_count == 0:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Department not found")
 
-    start_dt = datetime.combine(dt_from, datetime.min.time(), tzinfo=timezone.utc)
-    end_dt = datetime.combine(dt_to + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+    start_dt = datetime.combine(from_date, datetime.min.time(), tzinfo=timezone.utc)
+    end_dt = datetime.combine(to_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
     pipeline = [
         {"$documents": [{"date_obj": start_dt}]},
         {

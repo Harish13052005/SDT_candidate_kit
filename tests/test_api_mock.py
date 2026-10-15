@@ -74,6 +74,31 @@ def test_health(api_client):
     assert res.json() == {"status": "ok"}
 
 
+def test_startup_fails_when_index_creation_fails(monkeypatch):
+    class FailingCollection:
+        def create_index(self, *args, **kwargs):
+            raise RuntimeError("index creation failed")
+
+    class FailingDatabase:
+        employees = FailingCollection()
+
+    monkeypatch.setattr(main_module, "db", FailingDatabase())
+    with pytest.raises(RuntimeError, match="index creation failed"):
+        with TestClient(app):
+            pass
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/attendance?date_from=2026-02-31",
+        "/analytics/departments/Engineering/trend?from=2026-02-31&to=2026-03-01",
+    ],
+)
+def test_invalid_calendar_dates_return_422(api_client, path):
+    assert api_client.get(path).status_code == 422
+
+
 # --------------------------------------------------------------------------- #
 # /employees
 # --------------------------------------------------------------------------- #
